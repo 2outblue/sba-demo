@@ -1,6 +1,7 @@
 package com.novara_demo.admin.config;
 
 
+import com.novara_demo.admin.util.CustomAuthHeaderProvider;
 import com.novara_demo.admin.util.CustomAuthProvider;
 import de.codecentric.boot.admin.server.web.client.HttpHeadersProvider;
 import org.springframework.context.annotation.Bean;
@@ -11,6 +12,6 @@ public class AuthConfig {
 
     @Bean
     public HttpHeadersProvider authProvider() {
-        return new CustomAuthProvider();
+        return new CustomAuthHeaderProvider();
     }
 }

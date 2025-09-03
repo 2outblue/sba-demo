@@ -7,6 +7,15 @@ spring:
   application:
     name: novara-admin-server
 
+
+app:
+  credentials:
+    username: elon.vacation@example.com
+    password: SunnyMarsTrip42!
+  url:
+    login: http://localhost:8095/auth/login
+    refresh: http://localhost:8095/auth/refresh
+
 #logging:
 #  level:
 #    de.codecentric.boot.admin: DEBUG

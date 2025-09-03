@@ -1,6 +1,8 @@
 package com.novara_demo.admin.model;
 
-public class LoginResponse {
+import java.time.Instant;
+
+public class TokenResponse {
     private AccessToken accessToken;
     private RefreshToken refreshToken;
 
@@ -8,7 +10,7 @@ public class LoginResponse {
         return accessToken;
     }
 
-    public LoginResponse setAccessToken(AccessToken accessToken) {
+    public TokenResponse setAccessToken(AccessToken accessToken) {
         this.accessToken = accessToken;
         return this;
     }
@@ -17,13 +19,19 @@ public class LoginResponse {
         return refreshToken;
     }
 
-    public LoginResponse setRefreshToken(RefreshToken refreshToken) {
+    public TokenResponse setRefreshToken(RefreshToken refreshToken) {
         this.refreshToken = refreshToken;
         return this;
     }
 
     public static class AccessToken {
         private String tokenValue;
+        private Instant issuedAt;
+        private Instant expiresAt;
+
+        public boolean isValid() {
+            return tokenValue != null && expiresAt != null && Instant.now().isBefore(expiresAt.minusSeconds(30));
+        }
 
         public String getTokenValue() {
             return tokenValue;
@@ -31,6 +39,24 @@ public class LoginResponse {
 
         public AccessToken setTokenValue(String tokenValue) {
             this.tokenValue = tokenValue;
+            return this;
+        }
+
+        public Instant getIssuedAt() {
+            return issuedAt;
+        }
+
+        public AccessToken setIssuedAt(Instant issuedAt) {
+            this.issuedAt = issuedAt;
+            return this;
+        }
+
+        public Instant getExpiresAt() {
+            return expiresAt;
+        }
+
+        public AccessToken setExpiresAt(Instant expiresAt) {
+            this.expiresAt = expiresAt;
             return this;
         }
     }

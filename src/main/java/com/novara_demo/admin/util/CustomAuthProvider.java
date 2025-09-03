@@ -1,9 +1,7 @@
 package com.novara_demo.admin.util;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.novara_demo.admin.model.LoginRequest;
-import com.novara_demo.admin.model.LoginResponse;
+import com.novara_demo.admin.model.TokenResponse;
 import de.codecentric.boot.admin.server.domain.entities.Instance;
 import de.codecentric.boot.admin.server.web.client.HttpHeadersProvider;
 import org.springframework.http.HttpEntity;
@@ -13,12 +11,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
-@Component
+//@Component
 public class CustomAuthProvider implements HttpHeadersProvider {
 
     private final RestTemplate restTemplate = new RestTemplate();
     private volatile String jwtToken;
     private final String loginUrl = "http://localhost:8095/auth/login";
+
 
     @Override
     public HttpHeaders getHeaders(Instance instance) {
@@ -45,7 +44,7 @@ public class CustomAuthProvider implements HttpHeadersProvider {
 
             HttpEntity<LoginRequest> request = new HttpEntity<>(loginRequest, headers);
 
-            LoginResponse response = restTemplate.postForObject(loginUrl, request, LoginResponse.class);
+            TokenResponse response = restTemplate.postForObject(loginUrl, request, TokenResponse.class);
             System.out.println(response != null && response.getAccessToken() != null ? response.getAccessToken().getTokenValue() : null);
             return response != null && response.getAccessToken() != null
                 ? response.getAccessToken().getTokenValue()

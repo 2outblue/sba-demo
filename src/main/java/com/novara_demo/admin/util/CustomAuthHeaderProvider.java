@@ -49,6 +49,7 @@ public class CustomAuthHeaderProvider {
         return "invalid-token";
     }
 
+    // NOTE: Yes this can be done with Mono without using a ReentrantLock, which would be better.
     private void handleInvalidJwt() {
         refreshLock.lock();
         // When the attemptLogin() method is reached, a cool off period is set

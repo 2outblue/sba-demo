@@ -4,29 +4,17 @@ import com.novara_demo.admin.model.LoginRequest;
 import com.novara_demo.admin.model.RefreshRequest;
 import com.novara_demo.admin.model.TokenResponse;
 import com.novara_demo.admin.model.exception.FailedRefreshException;
-import de.codecentric.boot.admin.server.domain.entities.Instance;
-import de.codecentric.boot.admin.server.web.client.HttpHeadersProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
-import org.springframework.http.client.ClientHttpRequestExecution;
-import org.springframework.http.client.ClientHttpRequestInterceptor;
-import org.springframework.http.client.ClientHttpResponse;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
-@Component
-public class CustomAuthHeaderProvider implements HttpHeadersProvider {
+public class CustomAuthHeaderProvider {
     private final ReentrantLock refreshLock = new ReentrantLock();
-    private final AtomicReference<TokenResponse> responseCache = new AtomicReference<>(new TokenResponse());
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final AtomicReference<TokenResponse> tokensCache = new AtomicReference<>(new TokenResponse());
+    private final AtomicReference<Instant> coolOffPeriod = new AtomicReference<>(Instant.now().minusSeconds(1));
     private final RestClient restClient = RestClient.create();
 
     @Value("${app.url.login}")
@@ -37,52 +25,67 @@ public class CustomAuthHeaderProvider implements HttpHeadersProvider {
     private String username;
     @Value("${app.credentials.password}")
     private String password;
+    @Value("${app.login-cool-off-seconds}")
+    private long coolOffSeconds;
 
+    public HttpHeaders addBearerAuthHeader(HttpHeaders existingHeaders) {
 
-    @Override
-    public HttpHeaders getHeaders(Instance instance) {
-        HttpHeaders header = new HttpHeaders();
-        header.setBearerAuth(getJwtToken());
-        return header;
+        String jwtToken = getJwtToken();
+        if (jwtToken != null) {
+            existingHeaders.setBearerAuth(jwtToken);
+        }
+        return existingHeaders;
     }
 
     private String getJwtToken() {
-        TokenResponse tokens = responseCache.get();
+        TokenResponse tokens = tokensCache.get();
         if (tokens.getAccessToken() == null || !tokens.getAccessToken().isValid()) {
             handleInvalidJwt();
         }
-        return responseCache.get().getAccessToken().getTokenValue();
+
+        if (tokensCache.get().getAccessToken() != null && tokensCache.get().getAccessToken().isValid()) {
+            return tokensCache.get().getAccessToken().getTokenValue();
+        }
+        return "invalid-token";
     }
 
     private void handleInvalidJwt() {
         refreshLock.lock();
-
-        if (responseCache.get().getAccessToken() != null && responseCache.get().getAccessToken().isValid()) {
+        // When the attemptLogin() method is reached, a cool off period is set
+        // to prevent multiple login attempts (successful or not).
+        if (coolOffPeriod.get().isAfter(Instant.now())) {
             refreshLock.unlock();
             return;
         }
-        boolean refreshed = attemptRefresh();
-        if (!refreshed) {
-            try {
+
+        // Token may have been successfully refreshed by another thread at this point
+        if (tokensCache.get().getAccessToken() != null && tokensCache.get().getAccessToken().isValid()) {
+            refreshLock.unlock();
+            return;
+        }
+
+        try {
+            boolean refreshed = attemptRefresh(); // Refresh token may have expired
+            if (!refreshed) {
                 attemptLogin();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            } finally {
-                refreshLock.unlock();
             }
-        } else {
+        } catch (RuntimeException ignored) {
+            // SBA will try to authenticate with the wrong/no token if there is a problem here
+            //  so just let it try and it will back off requests if there is some prolonged
+            //  issue with the client. If the client was down for a few minutes - SBA will try
+            //  again after a certain amount of time and if client is up then, it will succeed.
+            // TODO: Add logging here
+        } finally {
             refreshLock.unlock();
         }
 
     }
 
+    // Attempt to refresh the JWT with the refresh token.
     public boolean attemptRefresh() {
-
-        TokenResponse currentTokens = responseCache.get();
+        TokenResponse currentTokens = tokensCache.get();
         if (currentTokens.getRefreshToken() == null) {return false;}
         RefreshRequest refreshRequest = new RefreshRequest(currentTokens.getRefreshToken().getTokenValue());
-//        HttpHeaders loginHeaders = new HttpHeaders();
-//        loginHeaders.setContentType(MediaType.APPLICATION_JSON);
 
         try {
             ResponseEntity<TokenResponse> tokenResponse = restClient.post()
@@ -97,44 +100,32 @@ public class CustomAuthHeaderProvider implements HttpHeadersProvider {
 
             if (tokenResponse.hasBody() && !tokenResponse.getStatusCode().isError()) {
                 TokenResponse responseBody = tokenResponse.getBody();
-                responseCache.set(responseBody);
+                tokensCache.set(responseBody);
                 return true;
             }
             return false;
-        } catch (FailedRefreshException e) {
+        } catch (RuntimeException e) {
             System.out.println(e.getMessage());
             return false;
         }
-
-//        int statusCode = tokenResponse.getStatusCode().value();
-//        String statusText = tokenResponse.getStatusCode().toString();
-//        HttpHeaders responseHeaders = tokenResponse.getHeaders();
-//        throw new WebClientResponseException(statusCode, statusText, responseHeaders, null, StandardCharsets.UTF_8);
     }
 
-    private boolean attemptLogin() {
+    private void attemptLogin() {
         LoginRequest loginRequest = new LoginRequest(username, password);
-        ResponseEntity<TokenResponse> response = restClient.post()
-                .uri(loginUrl)
-                .body(loginRequest)
-                .contentType(MediaType.APPLICATION_JSON)
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    int statusCode = res.getStatusCode().value();
-                    String statusText = res.getStatusCode().toString();
-                    HttpHeaders responseHeaders = res.getHeaders();
-                    throw new WebClientResponseException(statusCode, statusText, responseHeaders, null, StandardCharsets.UTF_8);
-                })
-                .toEntity(TokenResponse.class);
+        try {
+            ResponseEntity<TokenResponse> response = restClient.post()
+                    .uri(loginUrl)
+                    .body(loginRequest)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .toEntity(TokenResponse.class);
 
-        if (response.getStatusCode().is2xxSuccessful()) {
-            responseCache.set(response.getBody());
-            return true;
+            if (response.getStatusCode().is2xxSuccessful()) {
+                tokensCache.set(response.getBody());
+            }
+        } catch (RuntimeException ignored) {
+        } finally {
+            coolOffPeriod.set(Instant.now().plusSeconds(coolOffSeconds));
         }
-        int statusCode = response.getStatusCode().value();
-        String statusText = response.getStatusCode().toString();
-        HttpHeaders responseHeaders = response.getHeaders();
-
-        throw new WebClientResponseException(statusCode, statusText, responseHeaders, null, StandardCharsets.UTF_8);
     }
 }

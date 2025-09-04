@@ -6,9 +6,27 @@ server:
 spring:
   application:
     name: novara-admin-server
+  boot:
+    admin:
+      monitor:
+        status-interval: 60000ms
+        status-max-backoff: 600000ms
+        status-lifetime: 60000ms
+        default-timeout: 50000ms
+        default-retries: 5
+      ui:
+        poll-timer:
+          datasource: 60000
+          cache: 60000
+          gc: 60000
+          process: 60000
+          memory: 60000
+          threads: 60000
+          logfile: 20000
 
 
 app:
+  login-cool-off-seconds: 120
   credentials:
     username: elon.vacation@example.com
     password: SunnyMarsTrip42!
@@ -16,6 +34,6 @@ app:
     login: http://localhost:8095/auth/login
     refresh: http://localhost:8095/auth/refresh
 
-#logging:
-#  level:
-#    de.codecentric.boot.admin: DEBUG
+logging:
+  level:
+    de.codecentric.boot.admin: ERROR

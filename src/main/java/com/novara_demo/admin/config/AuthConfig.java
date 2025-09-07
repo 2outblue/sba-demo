@@ -7,11 +7,24 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.core.userdetails.MapReactiveUserDetailsService;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
+
+import static org.springframework.security.config.Customizer.withDefaults;
+
 @Configuration
+@EnableWebFluxSecurity
 public class AuthConfig {
 
     @Bean
@@ -51,4 +64,33 @@ public class AuthConfig {
         };
     }
 
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public MapReactiveUserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
+        UserDetails user = User
+                .withUsername("user")
+                .password(passwordEncoder.encode("pass"))
+                .build();
+        return new MapReactiveUserDetailsService(user);
+    }
+
+    @Bean
+    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
+        http
+                .authorizeExchange(exchanges -> exchanges
+                        .pathMatchers("/logout").permitAll()
+                        .anyExchange().authenticated()
+                )
+                .httpBasic(withDefaults())
+                .formLogin(withDefaults())
+                .logout(l -> l
+                        .logoutUrl("/logout"))
+                .csrf(c -> c.disable());
+
+        return http.build();
+    }
 }
